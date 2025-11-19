@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>Webターミナル ナゾトキ教材</title>
+  <!-- xterm.js のスタイル -->
+  <link rel="stylesheet" href="https://unpkg.com/@xterm/xterm/css/xterm.css" />
+  <style>
+    body { display: flex; flex-direction: column; align-items: center; background: #f0f0f0; font-family: sans-serif; }
+    #terminal { width: 80%; height: 400px; margin-top: 1rem; background: black; }
+    #ui { margin-top: 1rem; width: 80%; }
+    .hidden { display: none; }
+    #hint { margin-top: 0.5rem; color: #333; }
+  </style>
+</head>
+<body>
+  <h1>ターミナル ナゾトキ 入門</h1>
+  <div id="terminal"></div>
+
+  <div id="ui">
+    <div id="instruction">まずは <code>ls</code> コマンドを入力してみましょう。</div>
+    <div id="hint" class="hidden"></div>
+    <div>
+      フラグ入力: <input type="text" id="flagInput" />
+      <button id="submitFlag">送信</button>
+    </div>
+    <div id="message"></div>
+  </div>
+
+  <!-- xterm.js 本体 -->
+  <script src="https://unpkg.com/@xterm/xterm/lib/xterm.js"></script>
+  <script>
+    const { Terminal } = window.Terminal || window; // xterm.js の読み込み
+
+    // 仮想ファイルシステム (簡易)
+    const fs = {
+      '/': {
+        'flag1.txt': 'FLAG-START-12345\n',
+        '.hidden': {
+          'secret.txt': 'MOONLIGHT-KEY\n'
+        },
+        'note.txt': 'ここには SHIFT というヒントがあるよ。\n',
+        'cipher.txt': 'Ymnx nx f xjhwjy frpwudq!\n'
+      }
+    };
+
+    // 仮想現在ディレクトリ
+    let cwd = '/';
+
+    // ターミナルを作成
+    const term = new Terminal({ cursorBlink: true });
+    term.open(document.getElementById('terminal'));
+
+    // 入力を受け取る
+    term.onData(e => {
+      if (e === '\r') {
+        // Enter 押下時
+        const line = buffer.trim();
+        runCommand(line);
+        buffer = '';
+        term.write('\r\n'); // 改行
+      } else if (e === '\u007F') {
+        // Backspace
+        if (buffer.length > 0) {
+          buffer = buffer.slice(0, -1);
+          term.write('\b \b');
+        }
+      } else {
+        buffer += e;
+        term.write(e);
+      }
+    });
+
+    let buffer = '';
+
+    function runCommand(line) {
+      const parts = line.split(' ');
+      const cmd = parts[0];
+      const args = parts.slice(1);
+
+      switch (cmd) {
+        case 'ls':
+          cmd_ls(args);
+          break;
+        case 'ls-a':
+        case 'ls -a':
+          cmd_ls(args, { showHidden: true });
+          break;
+        case 'cd':
+          cmd_cd(args);
+          break;
+        case 'pwd':
+          term.write(cwd);
+          break;
+        case 'cat':
+          cmd_cat(args);
+          break;
+        default:
+          term.write(`不明なコマンド: ${cmd}`);
+      }
+    }
+
+    function resolvePath(path) {
+      if (path.startsWith('/')) {
+        return path;
+      } else {
+        return cwd === '/' ? `/${path}` : `${cwd}/${path}`;
+      }
+    }
+
+    function getNode(path) {
+      const parts = path.split('/').filter(p => p);
+      let node = fs['/'];
+      for (const part of parts) {
+        if (!(part in node)) return null;
+        node = node[part];
+      }
+      return node;
+    }
+
+    function cmd_ls(args, options = {}) {
+      const node = getNode(cwd);
+      if (!node) {
+        term.write('ディレクトリが見つかりません\n');
+        return;
+      }
+      const names = Object.keys(node);
+      for (const name of names) {
+        if (!options.showHidden && name.startsWith('.')) continue;
+        term.write(name + '  ');
+      }
+    }
+
+    function cmd_cd(args) {
+      if (args.length === 0) {
+        cwd = '/';
+      } else {
+        const target = resolvePath(args[0]);
+        const node = getNode(target);
+        if (node && typeof node === 'object') {
+          cwd = target;
+        } else {
+          term.write('ディレクトリではありません: ' + args[0]);
+        }
+      }
+    }
+
+    function cmd_cat(args) {
+      if (args.length === 0) {
+        term.write('読みたいファイル名を指定してください');
+        return;
+      }
+      const target = resolvePath(args[0]);
+      const node = getNode(target);
+      if (typeof node === 'string') {
+        term.write(node);
+      } else {
+        term.write('ファイルが見つかりません: ' + args[0]);
+      }
+    }
+
+    // 初期プロンプト
+    term.write('> ');
+
+    // フラグ送信処理
+    document.getElementById('submitFlag').addEventListener('click', () => {
+      const val = document.getElementById('flagInput').value.trim();
+      checkFlag(val);
+    });
+
+    function checkFlag(flag) {
+      if (flag === 'FLAG-START-12345') {
+        showMessage('ステージ1クリア！次は隠しファイルを探しましょう。');
+        showHint('ヒント: `ls -a` と `cd .hidden` を試してみて。');
+      } else if (flag === 'MOONLIGHT-KEY') {
+        showMessage('ステージ2クリア！次は note.txt を読んでみましょう。');
+        showHint('ヒント: `cd .hidden` の隣に note.txt があるかもしれません。');
+      } else if (flag === 'SHIFT') {
+        showMessage('ステージ3クリア！次は暗号を解読しましょう。');
+        showHint('ヒント: 暗号には “シーザー (shift)” が関係しています。');
+      } else if (flag === 'secret_command') {
+        showMessage('暗号解読成功！ナゾトキ完了、おめでとう！');
+      } else {
+        showMessage('フラグが違うようです。もう一度確認してみて。');
+      }
+    }
+
+    function showMessage(msg) {
+      document.getElementById('message').textContent = msg;
+    }
+    function showHint(msg) {
+      const h = document.getElementById('hint');
+      h.textContent = msg;
+      h.classList.remove('hidden');
+    }
+  </script>
+</body>
+</html>
